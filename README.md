@@ -1,51 +1,51 @@
 # HomeCloud Device Bridge
 
-**The device connectivity layer for [ByteWizard HomeCloud](https://github.com/DaniilGavrin).**
+**Слой взаимодействия с устройствами в экосистеме [ByteWizard HomeCloud](https://github.com/DaniilGavrin).**
 
-HomeCloud Device Bridge is a standalone Go service responsible for discovering, connecting to, and communicating with physical devices in a HomeCloud environment.
+HomeCloud Device Bridge — отдельный сервис на Go, предназначенный для обнаружения физических устройств, установления соединений с ними и обмена данными в среде HomeCloud.
 
-It is designed to run as a separate process on the same host as **HomeCloud Backend**. The Backend manages the Bridge lifecycle and remains the central control plane; the Bridge handles device-facing integrations.
+Сервис запускается отдельным процессом на том же узле, что и **HomeCloud Backend**. Backend управляет жизненным циклом Bridge и остаётся центральным управляющим компонентом системы, а Bridge отвечает за интеграцию с физическими устройствами и их протоколами.
 
-> **Project status:** Early development. This repository currently documents the intended architecture. Protocol integrations, runtime behavior, and public interfaces are not yet available.
+> **Статус проекта:** ранняя стадия разработки. Сейчас репозиторий описывает целевую архитектуру. Интеграции протоколов, поведение работающего сервиса и публичные интерфейсы ещё не реализованы.
 
 ---
 
-## Why Device Bridge?
+## Зачем нужен Device Bridge?
 
-Home automation devices often use different transports and protocols: local network APIs, Bluetooth Low Energy, Zigbee, Matter, and Thread.
+Устройства умного дома используют разные способы подключения и протоколы: локальные сетевые API, Bluetooth Low Energy, Zigbee, Matter и Thread.
 
-Device Bridge provides one dedicated place for these integrations. It keeps protocol-specific code out of the Backend while giving HomeCloud a consistent way to discover devices, receive state updates, and execute commands.
+Device Bridge объединяет интеграции с такими устройствами в отдельном сервисе. Это позволяет не переносить специфичный для каждого протокола код в Backend и предоставляет HomeCloud единый механизм обнаружения устройств, получения обновлений состояния и выполнения команд.
 
-The design follows a few principles:
+При разработке придерживаемся следующих принципов:
 
-- **Local-first:** device communication should work without a vendor cloud or permanent Internet access.
-- **Self-hosted:** no mandatory manufacturer infrastructure or external account.
-- **Modular:** protocol integrations are isolated behind well-defined internal interfaces.
-- **Reliable:** connections, retries, timeouts, and shutdown are managed explicitly.
-- **Resource-conscious:** suitable for small home servers and single-board computers.
-- **Open:** no artificial hardware lock-in.
+- **Локальная работа:** взаимодействие с устройствами не должно зависеть от облаков производителей или постоянного доступа в Интернет.
+- **Самостоятельное размещение:** никаких обязательных внешних аккаунтов и инфраструктуры производителей.
+- **Модульность:** интеграции протоколов изолированы за чётко определёнными внутренними интерфейсами.
+- **Надёжность:** явное управление соединениями, повторными попытками, тайм-аутами и завершением работы.
+- **Экономия ресурсов:** возможность работы на небольших домашних серверах и одноплатных компьютерах.
+- **Открытость:** отсутствие искусственной привязки к определённому оборудованию.
 
-## Architecture
+## Архитектура
 
-Device Bridge is a separate Go process, not a remote hub and not a UI component. It runs alongside HomeCloud Backend on the same machine.
+Device Bridge — отдельный процесс на Go. Это не удалённый аппаратный хаб и не компонент пользовательского интерфейса. Сервис работает на одной машине с HomeCloud Backend.
 
 ```mermaid
 flowchart TB
-    Clients[HomeCloud clients]
+    Clients[Клиенты HomeCloud]
     Backend[HomeCloud Backend]
     Bridge[HomeCloud Device Bridge]
 
-    subgraph Integrations[Device integrations]
-        LAN[Local network]
+    subgraph Integrations[Интеграции с устройствами]
+        LAN[Локальная сеть]
         BLE[Bluetooth LE]
         Zigbee[Zigbee]
         Matter[Matter / Thread]
     end
 
-    Devices[Physical devices]
+    Devices[Физические устройства]
 
     Clients <--> Backend
-    Backend <-->|Local IPC| Bridge
+    Backend <-->|Локальный IPC| Bridge
     Bridge <--> LAN
     Bridge <--> BLE
     Bridge <--> Zigbee
@@ -56,105 +56,105 @@ flowchart TB
     Matter <--> Devices
 ```
 
-*The diagram describes the target architecture. The exact IPC transport and integration interfaces are still to be finalized.*
+*Диаграмма показывает целевую архитектуру. Конкретный транспорт IPC и интерфейсы интеграций ещё предстоит окончательно определить.*
 
-### Responsibility boundaries
+### Разделение ответственности
 
-| Component | Responsibility |
+| Компонент | Ответственность |
 |---|---|
-| **HomeCloud Backend** | Device registry and source of truth, user-facing APIs, authorization, command routing, and system-wide state |
-| **HomeCloud Device Bridge** | Device discovery, protocol connections, driver lifecycle, telemetry collection, and command execution |
-| **Device drivers** | Protocol- and device-specific communication and data conversion |
+| **HomeCloud Backend** | Реестр устройств и источник достоверного состояния, API для клиентов, авторизация, маршрутизация команд и общее состояние системы |
+| **HomeCloud Device Bridge** | Обнаружение устройств, подключения по протоколам, жизненный цикл драйверов, сбор телеметрии и выполнение команд |
+| **Драйверы устройств** | Взаимодействие с конкретными устройствами и протоколами, преобразование данных |
 
-The Bridge must not become a second device registry. Persistent device identity and the authoritative device state belong to the Backend.
+Bridge не должен становиться вторым реестром устройств. Постоянная идентичность устройств и авторитетное состояние хранятся в Backend.
 
-## Planned capabilities
+## Планируемые возможности
 
-- Discover devices available through supported local integrations.
-- Maintain connections to devices and monitor their availability.
-- Normalize device information and state updates for the Backend.
-- Receive commands from the Backend and execute them through the appropriate driver.
-- Report command results and device events.
-- Recover from transient connection failures.
-- Shut down cleanly and release device resources.
+- Обнаружение устройств через поддерживаемые локальные интеграции.
+- Установка и поддержание соединений с устройствами, контроль их доступности.
+- Приведение информации об устройствах и обновлений их состояния к единому формату для Backend.
+- Получение команд от Backend и выполнение их через соответствующие драйверы.
+- Передача результатов выполнения команд и событий устройств.
+- Восстановление соединений после временных сбоев.
+- Корректное завершение работы с освобождением ресурсов устройств.
 
-### Planned integrations
+### Планируемые интеграции
 
-| Integration | Scope |
+| Интеграция | Область применения |
 |---|---|
-| Local network / Wi-Fi | Devices exposing local network APIs |
-| Bluetooth Low Energy | BLE peripherals and controllers |
-| Zigbee | Zigbee devices through a compatible coordinator |
-| Matter | Matter-compatible devices |
-| Thread | Thread-based connectivity, where supported by the host and integration stack |
+| Локальная сеть / Wi-Fi | Устройства с локальными сетевыми API |
+| Bluetooth Low Energy | BLE-периферия и контроллеры |
+| Zigbee | Устройства Zigbee через совместимый координатор |
+| Matter | Устройства, совместимые с Matter |
+| Thread | Подключение устройств через Thread при наличии поддержки со стороны оборудования и программного стека |
 
-Integration availability depends on compatible hardware, operating-system support, and the implementation of each driver. The list is a roadmap, not a claim of current support.
+Доступность интеграций зависит от совместимого оборудования, поддержки операционной системой и реализации соответствующих драйверов. Список отражает планы развития, а не уже реализованные возможности.
 
-## Backend communication
+## Взаимодействие с Backend
 
-The Backend and Bridge communicate over a **local inter-process channel**. The preferred direction is an OS-native local transport, such as a Unix domain socket on Linux and a named pipe on Windows. A loopback network transport remains an alternative if implementation constraints require it.
+Backend и Bridge обмениваются данными через **локальный межпроцессный канал**. Предпочтительный вариант — нативный для операционной системы локальный транспорт: например, Unix domain socket в Linux и именованный канал (named pipe) в Windows. Если этого потребуют технические ограничения, альтернативой может стать сетевое соединение через loopback-интерфейс.
 
-The internal protocol will need to cover:
+Внутренний протокол должен предусматривать:
 
-- process handshake and protocol compatibility;
-- readiness and health reporting;
-- device discovery and registration events;
-- device state and availability updates;
-- command delivery and execution results;
-- graceful shutdown.
+- рукопожатие процессов и согласование совместимости версий протокола;
+- подтверждение готовности и передачу состояния работоспособности;
+- события обнаружения и регистрации устройств;
+- обновления состояния и доступности устройств;
+- доставку команд и передачу результатов их выполнения;
+- корректное завершение работы.
 
-A command being delivered is not the same as a command being executed successfully. The protocol will distinguish delivery/acceptance from the final execution result.
+Доставка команды не означает, что устройство успешно её выполнило. Протокол должен различать факт доставки или принятия команды и итоговый результат её исполнения.
 
-The Bridge is expected to own the lifecycle of its active driver instances and device connections. The Backend owns the Bridge process lifecycle, including startup, readiness checks, failure detection, restart policy, and graceful termination.
+Bridge управляет жизненным циклом собственных драйверов и соединений с устройствами. Backend управляет жизненным циклом самого процесса Bridge: запуском, проверкой готовности, обнаружением сбоев, политикой перезапуска и корректным завершением.
 
-## Driver model
+## Модель драйверов
 
-The initial implementation is expected to use built-in Go packages compiled into the Bridge binary.
+На первом этапе драйверы планируется реализовать в виде встроенных Go-пакетов, компилируемых непосредственно в бинарный файл Bridge.
 
-Drivers will follow explicit interfaces so integrations can evolve independently without introducing a dynamic plugin system prematurely.
+Для драйверов будут определены явные интерфейсы, позволяющие независимо развивать интеграции без преждевременного внедрения динамической системы плагинов.
 
-This keeps deployment straightforward: one service binary, a predictable set of dependencies, and no requirement to download executable drivers at runtime.
+Такой подход упрощает развёртывание: один бинарный файл сервиса, предсказуемый набор зависимостей и отсутствие необходимости загружать исполняемые драйверы во время работы.
 
-## Security
+## Безопасность
 
-Device Bridge is intended to operate as a local system component.
+Device Bridge проектируется как локальный системный компонент.
 
-- The internal Backend channel should not be exposed to the public Internet.
-- Device integrations should use local communication wherever possible.
-- Secrets and pairing credentials must not be written to logs or committed to the repository.
-- Drivers must validate device responses and handle malformed or unexpected input.
-- Access to local devices and host resources should follow the principle of least privilege.
+- Внутренний канал взаимодействия с Backend не должен быть доступен из публичного Интернета.
+- По возможности интеграции должны использовать локальные способы взаимодействия с устройствами.
+- Секреты и данные сопряжения не должны попадать в логи или в репозиторий.
+- Драйверы должны проверять ответы устройств и корректно обрабатывать некорректные или неожиданные данные.
+- Доступ к устройствам и ресурсам хоста должен предоставляться по принципу минимально необходимых привилегий.
 
-Authentication and authorization policy for user-facing operations remain responsibilities of the HomeCloud control plane.
+Политика аутентификации и авторизации пользовательских операций остаётся ответственностью управляющего контура HomeCloud.
 
-## Development
+## Разработка
 
-The project is written in **Go**.
+Проект написан на **Go**.
 
-The repository is in its initial stage, so build instructions, configuration reference, supported Go version, and test commands will be documented once the corresponding implementation is in place.
+Репозиторий находится на начальном этапе. Инструкции по сборке, описание конфигурации, поддерживаемая версия Go и команды запуска тестов будут добавлены по мере появления соответствующей реализации.
 
-Contributions should preserve the architecture boundaries described above. In particular, avoid moving device persistence or user-facing business logic into the Bridge.
+При внесении изменений важно сохранять описанное выше разделение ответственности. В частности, не следует переносить в Bridge постоянное хранение данных об устройствах или бизнес-логику пользовательских операций.
 
-## Roadmap
+## План разработки
 
-- [ ] Define the Backend ↔ Bridge protocol and compatibility strategy.
-- [ ] Implement process startup, handshake, readiness, and health reporting.
-- [ ] Implement graceful shutdown and supervised restart behavior.
-- [ ] Add device discovery and event contracts.
-- [ ] Add command delivery and execution-result handling.
-- [ ] Establish the Go driver interface and lifecycle.
-- [ ] Implement the first local device integration.
-- [ ] Add integration tests with a Backend test peer and simulated devices.
-- [ ] Document configuration, deployment, and supported hardware.
+- [ ] Определить протокол взаимодействия Backend ↔ Bridge и стратегию совместимости.
+- [ ] Реализовать запуск процесса, рукопожатие, подтверждение готовности и передачу состояния работоспособности.
+- [ ] Реализовать корректное завершение работы и контролируемый перезапуск.
+- [ ] Определить контракты обнаружения устройств и передачи событий.
+- [ ] Реализовать доставку команд и обработку результатов выполнения.
+- [ ] Определить интерфейс Go-драйверов и управление их жизненным циклом.
+- [ ] Реализовать первую локальную интеграцию с устройствами.
+- [ ] Добавить интеграционные тесты с тестовым Backend и эмулируемыми устройствами.
+- [ ] Документировать конфигурацию, развёртывание и поддерживаемое оборудование.
 
-Roadmap items are planned work and may change as implementation progresses.
+Пункты плана отражают текущее направление разработки и могут изменяться по мере развития проекта.
 
-## Part of ByteWizard HomeCloud
+## Часть экосистемы ByteWizard HomeCloud
 
-HomeCloud Device Bridge is one component of the modular, self-hosted [ByteWizard HomeCloud](https://github.com/DaniilGavrin) ecosystem.
+HomeCloud Device Bridge — один из компонентов модульной платформы с самостоятельным размещением [ByteWizard HomeCloud](https://github.com/DaniilGavrin).
 
-The goal is to make locally managed devices work together through a consistent control plane — without requiring a manufacturer's cloud or tying users to specific hardware.
+Цель проекта — объединить локально управляемые устройства через единый управляющий контур, не требуя облачной инфраструктуры производителей и не привязывая пользователей к определённому оборудованию.
 
 ---
 
-**Repository:** [DaniilGavrin/HomeCloudDeviceBridge](https://github.com/DaniilGavrin/HomeCloudDeviceBridge)
+**Репозиторий:** [DaniilGavrin/HomeCloudDeviceBridge](https://github.com/DaniilGavrin/HomeCloudDeviceBridge)
