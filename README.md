@@ -12,11 +12,11 @@ Bridge запускается на том же узле, что и **HomeCloud B
 
 - [Архитектура Device Bridge v1](docs/ARCHITECTURE_V1.md)
 
-Детальные спецификации общего Device Contracts, управляющего протокола, Go API драйверов, разработки и тестирования будут добавлены отдельными документами до реализации соответствующих компонентов.
+Нормативные спецификации: [Device Contracts v1](docs/DEVICE_CONTRACTS_V1.md), [Backend ↔ Bridge Protocol v1](docs/BRIDGE_PROTOCOL_V1.md), [Driver API v1](docs/DRIVER_API_V1.md), [Architecture v1](docs/ARCHITECTURE_V1.md).
 
 ## Основные обязанности
 
-- Обнаружение устройств через локальные интеграции: LAN/Wi-Fi, Bluetooth LE, Zigbee, Matter и другие поддерживаемые драйверы.
+- Обнаружение устройств через первые интеграции Bluetooth LE и Wi-Fi/LAN; Zigbee, Matter и Thread не входят в первый этап.
 - Обнаружение временных pairing candidates и передача их Backend.
 - Выполнение протокольного сопряжения после того, как пользователь выбрал устройство в UI.
 - Хранение локальной протокольной идентичности и mapping на HomeCloud `device_id` в собственном Bridge Device Registry.
