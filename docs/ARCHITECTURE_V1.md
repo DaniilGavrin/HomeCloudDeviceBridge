@@ -97,7 +97,7 @@ HomeCloud Backend
 
 **Backend Physical Device Registry** — постоянный каталог сопряжённых физических устройств HomeCloud. Он хранит выданный Backend `device_id`, тип, подтверждённые нормализованные capabilities/entities, пользовательские данные, разрешения и последнее известное состояние. Именно этот реестр читает UI.
 
-\*\*Существующий \*\*`hc_devices` — реестр WebSocket-клиентов Backend. В нём может присутствовать системный WS peer Device Bridge, но физические устройства в него не записываются.
+**Существующий**\*`hc_devices` — реестр WebSocket-клиентов Backend. В нём может присутствовать системный WS peer Device Bridge, но физические устройства в него не записываются.
 
 Это три отдельных домена: два реестра физических устройств с разными задачами и один реестр WS-клиентов.
 
@@ -586,24 +586,13 @@ Router находит устройство по HomeCloud `device_id` через
 
 ## 12. Совместимость и версии
 
-Необходимо различать независимые версии:
+Версии независимы: Backend WS envelope (`v=1`), Bridge Protocol v1, Device Contracts v1, версии Device Type/Capability и `capability_revision` экземпляра.
 
-- публичного Backend WebSocket API (сейчас v1);
-- управляющего Backend ↔ Bridge протокола (использует существующий WS JSON v1 envelope);
-- общего Device Contracts пакета;
-- отдельных контрактов Device Type / Capability / Entity;
-- декларации capabilities конкретного экземпляра устройства (`capability_revision`).
+**Отдельного репозитория и общего Go module для Device Contracts нет.** Backend и Bridge содержат собственные реализации `internal/devicecontracts`. Нормативная модель, JSON Schema и fixtures определены в `docs/DEVICE_CONTRACTS_V1.md` и зеркально поддерживаются в обоих репозиториях. Схемы и fixtures должны быть byte-identical; contract tests в обоих CI проверяют одинаковые fixtures и parity/checksum. Драйверы существуют только в Bridge.
 
-Общий Device Contracts пакет версионируется как Go-модуль/зависимость. Изменения контрактов проходят проверку обратной совместимости и contract tests. Backend и Bridge должны собираться с совместимыми версиями пакета; совместимость также проверяется при handshake, чтобы исключить запуск несовместимых бинарников.
+Additive optional fields допускаются при безопасном игнорировании неизвестных optional fields. Изменение смысла поля, обязательности, ID, единиц, команд или семантики — breaking change и требует новой версии контракта/миграции. Неизвестная обязательная версия отклоняется. Envelope version не используется вместо Device Contracts version.
 
-Изменение набора capabilities конкретного устройства увеличивает его `capability_revision`. Версия определения capability и revision декларации устройства — разные величины: первая меняется при изменении самого стандарта HomeCloud, вторая — при изменении фактического набора возможностей экземпляра.
-
-Неизвестные версии и поля не должны молча трактоваться как поддерживаемые. Backend остаётся авторитетной стороной проверки и регистрации деклараций; Bridge повторно проверяет текущую revision и runtime-поддержку перед физическим исполнением команды.
-
-Изменение внутреннего контракта не должно автоматически менять публичный UI WS API: Backend адаптирует внутреннюю модель к публичной модели HomeCloud.
-
----
-
+Изменение набора capabilities устройства увеличивает `capability_revision`. Backend остаётся authority регистрации и подтверждения декларации; Bridge повторно проверяет revision и runtime capability перед исполнением.
 ## 13. Интеграция с текущим HomeCloud Backend
 
 Проверенная ветка Backend main на commit e252b5bae7f1e7c6999ab2acec7d8ef3df2a55d4 уже содержит:
@@ -673,67 +662,122 @@ Router находит устройство по HomeCloud `device_id` через
 
 ## 15. Этапы реализации
 
-1. Зафиксировать общий Device Contracts Go module: Device Type, Capability, Entity, command schemas, constraints, UI metadata и contract tests.
-2. Зафиксировать Bridge ↔ Backend WebSocket actions и JSON Schema v1, включая pairing candidate, user selection, registration claim/result, command accepted/result, state и availability.
-3. Реализовать Backend Physical Device Registry, identity mapping и pairing/registration service с отдельными SQLite-таблицами.
-4. Реализовать Bridge Device Registry на SQLite и persistent mapping.
-5. Реализовать Bridge service WS identity, отдельную privileged registration action и reconcile.
-6. Реализовать Backend supervisor, Bridge health endpoint, stdin EOF shutdown, reconnect и readiness.
-7. Реализовать Bridge discovery/pairing runtime и тестовый драйвер лампочки.
-8. Реализовать автоматическую регистрацию после пользовательского выбора и восстановление ранее сопряжённых устройств.
-9. Реализовать командную проверку Backend, Bridge Router и раздельные статусы accepted/result.
-10. Реализовать передачу state/telemetry и публикацию UI events.
-11. Подключить UI к Backend candidate list, pairing selection, device snapshot и event stream.
-12. Провести интеграционный тест полного сценария лампочки, включая offline/online и reconnect.
-13. После этого добавлять реальные протоколы и драйверы.
+1. Зафиксировать локальные `internal/devicecontracts` в Backend и Bridge на основании `DEVICE_CONTRACTS_V1.md`, byte-identical schemas/fixtures и parity tests.
+2. Реализовать Backend Physical Device Registry и pairing/registration service.
+3. Реализовать Bridge Device Registry, identity mapping и миграции SQLite.
+4. Реализовать service WS identity, privileged registration, readiness и reconciliation.
+5. Реализовать Backend supervisor, health endpoint, stdin EOF shutdown, reconnect и degraded mode.
+6. Реализовать общий driver runtime и симулятор устройства.
+7. Реализовать BLE discovery/GATT profile abstraction и pairing.
+8. Реализовать Wi-Fi/LAN discovery и первый конкретный локальный API profile; Wi-Fi не считается универсальным протоколом.
+9. Реализовать pairing candidates, выбор пользователя, протокольное сопряжение и автоматическую регистрацию.
+10. Реализовать command validation, router, accepted/result/unknown и per-device serialization.
+11. Реализовать state/telemetry и Backend Event Bus publication.
+12. Подключить UI к Backend candidate list, pairing selection, device snapshot и event stream.
+13. Провести hardware-in-the-loop и end-to-end проверки BLE и Wi-Fi сценариев, включая offline/online и reconnect.
 
-Каждый этап должен иметь unit, contract и integration tests. Contract tests Backend ↔ Bridge должны проверять несовместимую версию, некорректные сообщения, потерю WS, повторную service registration, истёкший candidate, повторное сопряжение известной identity, конфликт identity, неизвестную capability, устаревшую revision, недоступное устройство и ошибку исполнения команды.
+Каждый этап включает unit, contract и integration tests. Минимальный simulator покрывает pairing, identity, registration, команды, telemetry, disconnect и reconnect до подключения реального оборудования.
+## 16. Зафиксированные решения и границы спецификаций
 
-## 16. Оставшиеся решения и границы спецификаций
+Все архитектурные решения, необходимые для старта реализации v1, зафиксированы в этой странице и связанных спецификациях.
 
-Основная архитектура и пользовательская политика сопряжения согласованы. Следующие детали требуют отдельной фиксации в спецификациях до реализации соответствующих частей:
+### 16.1. Device Contracts
 
-1. **Общий Device Contracts repository/module path.** Рекомендуем отдельный репозиторий `DaniilGavrin/HomeCloudDeviceContracts`, чтобы Backend и Bridge зависели от нейтрального общего модуля. Точный Go module path и имя репозитория нужно утвердить до создания.
-2. **Неизвестный Device Type.** Рекомендуем сохранять обнаруженное устройство в ограниченном состоянии без исполняемых capabilities, а не отвергать весь факт обнаружения.
-3. **Неизвестная Capability.** Рекомендуем отклонять неизвестную capability отдельно, сохраняя возможность работы с остальными подтверждёнными capabilities. Неизвестная capability никогда не становится исполняемой автоматически.
-4. **Нестабильная identity.** Рекомендуем не выполнять автоматическое объединение; при отсутствии надёжной identity требуется явное сопоставление пользователем.
-5. **Candidate TTL и discovery policy.** Время жизни candidate, поведение сканирования и ограничения параллельных pairing sessions фиксируются в Bridge Protocol / Driver API с учётом возможностей каждого протокола.
-6. **Pairing credentials.** UI flow для PIN/QR/секретов определяется конкретным протоколом. Секреты не должны передаваться в логах или храниться в открытом виде.
-7. **Командные timeout и неопределённый результат.** Принятие команды и итоговое исполнение — разные статусы. При потере соединения нельзя автоматически повторять неидемпотентную команду; поведение при неизвестном результате и timeout должно быть определено в Bridge Protocol.
-8. **Точные wire contracts.** Имена actions, JSON Schema, error codes, correlation/idempotency и reconnect reconciliation фиксируются в `BRIDGE_PROTOCOL_V1.md`.
-9. **Go driver API.** Интерфейсы, concurrency, lifecycle, cancellation, timeout и error mapping фиксируются в `DRIVER_API_V1.md`.
+- Отдельного репозитория/Go module нет.
+- В Backend и Bridge — собственные локальные `internal/devicecontracts`.
+- Нормативная модель — `docs/DEVICE_CONTRACTS_V1.md`; схемы и fixtures зеркалируются в обоих репозиториях.
+- Contract tests и parity checks обязательны в CI обоих репозиториев.
+- Неизвестный Device Type сохраняется как unsupported без исполняемых capabilities.
+- Неизвестная Capability отклоняется отдельно; остальные известные валидные capabilities могут работать.
+- Capability revision монотонно увеличивается при изменении фактического набора возможностей экземпляра.
 
-### Уже согласованные решения
+### 16.2. Identity и восстановление
 
-- Новое физическое устройство обнаруживается только после физического перевода в режим сопряжения; пользователь выбирает candidate в UI, дальнейшая регистрация автоматическая.
-- Повторное обнаружение надёжно известного сопряжённого устройства не требует повторного выбора.
-- Backend назначает постоянный HomeCloud `device_id`; Bridge сохраняет локальный mapping.
-- `hc_devices` остаётся реестром WS-клиентов; системный Bridge peer может присутствовать там, физические устройства — нет.
-- Backend и Bridge используют общий версионируемый Go-пакет Device Contracts; драйверы остаются внутри Bridge.
-- Backend и Bridge имеют отдельные SQLite-реестры физических устройств.
-- Управляющий канал использует существующий Backend WebSocket JSON v1 на loopback; отдельный Unix Socket / Named Pipe не вводится.
-- Backend запускает Bridge как supervised child process; stdin EOF инициирует graceful shutdown; health endpoint не заменяет WS registration/readiness.
-- Команды имеют отдельные этапы принятия и итогового результата; offline-команды не ставятся в отложенную очередь.
+- Backend назначает глобальный `device_id`; Bridge хранит локальный mapping.
+- Stable identity определяется внутри namespace `integration_id`; MAC/IP не являются универсальным ID.
+- Только stable и однозначная identity допускает автоматическое повторное сопоставление.
+- Weak/session-only identity требует явного разрешения пользователя.
+- Потеря Bridge DB не удаляет Backend records. Повторное сопоставление выполняется только по надёжному identity claim; иначе требуется ручное связывание.
+- Factory reset/смена native identity рассматривается как новая identity до явного подтверждения пользователем; автоматическое слияние запрещено.
+- Удаление устройства — отдельная пользовательская операция в Backend; offline/отключение не удаляет запись.
 
+### 16.3. Discovery и pairing
+
+- Первые transport families: Bluetooth Low Energy и Wi-Fi/LAN.
+- BLE transport не означает универсальную поддержку любого GATT-устройства: требуется известный профиль/драйвер.
+- Wi-Fi/LAN — семейство локальных API/протоколов; discovery может быть mDNS/DNS-SD, SSDP, broadcast или ручным адресом по профилю.
+- Zigbee, Matter и Thread не входят в первую реализацию.
+- Candidate TTL по умолчанию — 90 секунд после последнего обнаружения; повторное обнаружение обновляет TTL. Интеграция может выбрать 30–600 секунд.
+- Pairing session — 5 минут по умолчанию, допускается однократное продление; hard limit 10 минут.
+- По умолчанию один pairing на adapter/coordinator; параллелизм повышается только при подтверждённой поддержке стека.
+- Candidate повторно проверяется Bridge непосредственно перед pairing; истёкший candidate не может создать устройство.
+- PIN/QR и другие protocol inputs передаются через Backend typed flow, не напрямую UI ↔ Bridge.
+
+### 16.4. Credentials и безопасность
+
+- Одноразовые PIN/QR данные не сохраняются после pairing.
+- Долгосрочные bond keys/tokens хранятся только если требуются протоколом, с доступом только service account.
+- DB/config files — mode 0600, parent directory — 0700 где применимо; секреты не логируются.
+- Если на платформе нельзя безопасно сохранить обязательные credentials, интеграция сообщает unavailable, а не пишет секреты в обычные конфиги/логи.
+- Loopback WS + фиксированная service identity — локальная граница маршрутизации, не криптографическая аттестация процесса.
+
+### 16.5. Команды и результаты
+
+- Backend acceptance deadline — 3 секунды; default driver execution deadline — 10 секунд, с ограниченными override для протокола.
+- Статусы: accepted, succeeded, failed, unknown. Accepted означает принятие Bridge, не физическое подтверждение.
+- Если соединение оборвалось после отправки и исход нельзя доказать, результат — unknown.
+- В v1 нет автоматических повторов команд и offline queue.
+- Повторный `command_id` не исполняется второй раз; Bridge возвращает известный результат из ограниченного dedup cache.
+- Изменяющие команды сериализуются per-device; разные устройства могут исполняться параллельно.
+- Offline command отклоняется.
+
+### 16.6. SQLite и миграции
+
+Backend и Bridge используют отдельные SQLite базы/таблицы, принадлежащие соответствующим процессам. Bridge не открывает SQLite Backend и наоборот.
+
+Backend минимально хранит:
+- `physical_devices`: canonical device_id, type, metadata, lifecycle/availability, timestamps;
+- `device_identity_claims`: integration namespace, native identity, quality, device_id, uniqueness/conflict state;
+- `device_capabilities`: accepted capability IDs/versions and revision;
+- `device_entities`: normalized entity definitions;
+- `device_entity_states`: current normalized values and measured_at;
+- rooms, user metadata and permissions через существующие доменные модели/связи, не дублируя их без необходимости;
+- `device_state_history`: optional bounded history according to Backend policy.
+
+Bridge минимально хранит:
+- `bridge_devices`: local_id, integration_id, native identity, identity quality, metadata, driver ID, device_id mapping, timestamps;
+- `bridge_capabilities`: actual driver declaration/revision;
+- `bridge_credentials`: only protocol-required persistent secrets;
+- `bridge_pairing_sessions`: temporary session state; expired sessions cleaned up;
+- `bridge_command_dedup`: bounded recent command IDs/results with TTL.
+
+Fixed fields and relations — normalized columns with indexes and foreign keys. Flexible metadata/declarations may be JSON with schema validation. Current state is separate from capability declaration. SQLite writes use transactions; schema changes use ordered, versioned migrations and backup/rollback before destructive migration. WAL and busy timeout are configured deliberately and tested on low-resource hardware. Runtime sockets/scanners are not persisted as live connections.
+
+### 16.7. Driver API и спецификации
+
+- Built-in Go packages only in v1; no dynamic plugin loader.
+- Driver lifecycle is context-bound and idempotently stoppable.
+- Per-device mutating command concurrency is 1; adapter limits are explicit.
+- Driver API, BLE profile boundary and Wi-Fi local API boundary are specified in `DRIVER_API_V1.md`.
+- Wire actions, payloads, error codes, reconnect and dedup semantics are specified in `BRIDGE_PROTOCOL_V1.md`.
+- Device Type/Capability/Entity semantics and fixtures are specified in `DEVICE_CONTRACTS_V1.md`.
+
+Timeout/TTL values are initial v1 defaults, configurable within safe bounded ranges.
 ## 17. Критерии готовности архитектуры v1
 
-Архитектура считается согласованной, когда определены:
+Архитектура v1 готова к реализации, когда нормативные документы определяют:
+- границы Backend, Bridge, driver и UI;
+- два физических реестра и отдельный WS client registry `hc_devices`;
+- pairing flow, candidate/session lifecycle, TTL, cancellation и credentials;
+- BLE и Wi-Fi/LAN как первые transport families с профилями конкретных устройств;
+- identity quality, canonical ID assignment, conflicts, factory reset и recovery;
+- Device Type / Capability / Entity / State, версии и contract fixtures;
+- локальные contract packages в Backend и Bridge без отдельного репозитория;
+- SQLite ownership, минимальные таблицы, миграции и persistence;
+- WS service registration, actions, readiness, heartbeat, reconnect и reconcile;
+- command accepted/result/unknown, timeout, deduplication и concurrency;
+- driver lifecycle, context cancellation, error mapping и test requirements;
+- security boundaries, secret handling и degraded mode;
+- simulator, hardware-in-the-loop и end-to-end acceptance criteria.
 
-- границы ответственности Backend, Bridge, драйвера и UI;
-- отдельные модели Backend Physical Device Registry и Bridge Device Registry;
-- отдельная роль существующего `hc_devices` как реестра WS-клиентов;
-- стабильная identity model и правила сопоставления повторно обнаруженных устройств;
-- полуавтоматический pairing flow: физический pairing mode → discovery candidate → выбор пользователя → protocol pairing → автоматическая регистрация;
-- состояния candidate, pairing, registration, paired и offline;
-- модель Device Type / Capability / Entity / State и общий версионируемый Device Contracts пакет;
-- формат декларации capabilities, версионирование и правила проверки Backend/Bridge;
-- разделение статических контрактов и динамических данных экземпляров в SQLite;
-- правила регистрации, обновления, offline/online и конфликтов идентичности;
-- управляющий WebSocket JSON v1, service identity, privileged registration, heartbeat, health и graceful shutdown;
-- формат команды, маршрутизация, accepted/result, timeout и ошибки;
-- формат телеметрии и событий;
-- модель доступных UI действий с учётом capabilities и permissions;
-- правила совместимости версий и восстановления после сбоев;
-- сквозной тест лампочки, включая первичное сопряжение, offline/online и повторное обнаружение.
-
-**Главное правило:** Backend владеет постоянной HomeCloud-идентичностью и решает, что устройство может делать и кому разрешено это делать. Bridge знает, какое физическое устройство соответствует этой записи и как с ним взаимодействовать. UI знает только модель, которую предоставляет Backend.
+**Главное правило:** Backend владеет постоянной HomeCloud-идентичностью, проверяет capabilities и permissions. Bridge владеет локальной протокольной идентичностью и способом связи с физическим устройством. UI работает только через Backend.
