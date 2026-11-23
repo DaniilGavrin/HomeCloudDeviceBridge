@@ -303,11 +303,9 @@ Backend использует этот пакет как основу своег�
 
 `internal/devices.Store` и таблица `hc_devices` в текущем Backend относятся к клиентам HomeCloud, подключающимся по WebSocket. Они содержат `device_id`, `client_type`, имя и timestamps клиентского подключения.
 
-Системный peer Device Bridge регистрируется здесь как WS-клиент с собственным фиксированным service ID и `client_type=device_bridge`. Такая запись описывает только активное клиентское соединение процесса Bridge. Она не является записью физического устройства и не заменяет Bridge Device Registry или Backend Physical Device Registry.
+Системный peer Device Bridge регистрируется здесь как WS-клиент с фиксированным service ID `homecloud-device-bridge` и `client_type=device_bridge`. Такая запись описывает системное клиентское соединение процесса Bridge. Она не является записью физического устройства и не заменяет Bridge Device Registry или Backend Physical Device Registry.
 
 Эта модель остаётся без изменений. Для физических устройств создаётся отдельный домен и отдельные таблицы SQLite.
-
----
 
 ## 5. Контракт регистрации и повторного обнаружения устройства
 
