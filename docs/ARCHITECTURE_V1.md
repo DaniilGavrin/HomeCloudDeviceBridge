@@ -346,7 +346,7 @@ MAC-адрес и IP-адрес сами по себе не считаются �
 
 ```json
 {
-  "integration_id": "zigbee",
+  "integration_id": "ble",
   "native_device_id": "coordinator-specific-stable-id",
   "device_type": {
     "id": "light",
@@ -634,32 +634,28 @@ Additive optional fields допускаются при безопасном иг
 
 ---
 
-## 14. Сквозной сценарий v1: сопряжение лампочки и управление
+## 14. Сквозной сценарий v1: сопряжение и управление
 
-Минимальный acceptance scenario:
+Минимальный acceptance scenario сначала выполняется на simulator, затем на конкретном устройстве с реализованным BLE GATT profile или поддерживаемым Wi-Fi/LAN API. Сам по себе BLE/Wi-Fi транспорт не гарантирует наличие универсального профиля управления.
 
-1. Backend запускает Device Bridge, проверяет health, WS registration и получает `bridge.ready`.
-2. Пользователь переводит Zigbee-лампочку в pairing mode.
-3. Драйвер обнаруживает лампочку и создаёт временный candidate.
+1. Backend запускает Device Bridge, проверяет health, WS registration и получает `device.bridge.ready`.
+2. Пользователь переводит тестовое устройство в pairing/setup mode.
+3. BLE или Wi-Fi integration обнаруживает устройство и создаёт временный candidate.
 4. Bridge отправляет candidate Backend; Backend передаёт его UI.
-5. UI показывает найденную лампочку. Пользователь выбирает её.
-6. Backend проверяет право пользователя и передаёт Bridge подтверждение выбора.
-7. Bridge выполняет необходимую протокольную процедуру сопряжения.
-8. Bridge сохраняет запись в Bridge Device Registry и отправляет Backend identity claim, функциональный тип `light`, capabilities `switch` и `brightness`.
-9. Backend проверяет декларацию по общему Device Contracts, назначает `device_id`, сохраняет запись в Physical Device Registry и возвращает registration result.
-10. Bridge сохраняет mapping `local_id ↔ device_id`.
-11. Backend публикует событие об изменении реестра; UI отображает переключатель и ползунок яркости.
-12. Пользователь включает лампу. UI отправляет `devices.command` в Backend.
-13. Backend проверяет устройство, capability `switch`, схему команды и permissions.
-14. Backend передаёт абстрактную команду через WS управляющий канал.
-15. Bridge находит локальную запись через mapping и передаёт команду нужному драйверу.
-16. Драйвер выполняет протокольную операцию; Bridge отдельно сообщает принятие команды и итоговый результат.
-17. Backend обновляет состояние и публикует событие.
-18. Лампочка отключается: Backend сохраняет запись и последнее состояние, availability становится offline.
-19. Лампочка возвращается: Bridge распознаёт прежнюю identity, использует прежний mapping, Backend обновляет availability=online без повторного выбора и без создания дубля.
+5. Пользователь выбирает candidate; Backend проверяет право и подтверждает выбор Bridge.
+6. Bridge выполняет протокольное pairing/provisioning, если оно требуется конкретному профилю.
+7. Bridge сохраняет локальную запись и отправляет identity claim, функциональный тип и фактические capabilities.
+8. Backend проверяет декларацию по Device Contracts, назначает `device_id`, сохраняет запись в Physical Device Registry и возвращает registration result.
+9. Bridge сохраняет mapping `local_id ↔ device_id`.
+10. Backend публикует событие; UI отображает поддерживаемые controls.
+11. UI отправляет команду Backend; Backend проверяет устройство, capability, command schema и permissions.
+12. Backend передаёт команду через управляющий WS; Bridge проверяет mapping/runtime capability и вызывает driver.
+13. Driver выполняет протокольную операцию; Bridge отправляет accepted и затем succeeded/failed/unknown.
+14. Backend обновляет state и публикует событие.
+15. При потере связи availability становится offline, но обе постоянные записи и последнее состояние сохраняются.
+16. После восстановления Bridge распознаёт прежнюю stable identity, восстанавливает mapping и сообщает online без повторного выбора и без дубля.
 
-Для первого сквозного теста допустим симулятор драйвера с управляемым pairing candidate. После проверки контрактов он заменяется реальным драйвером без изменения публичного UI API и доменной модели Backend.
-
+Первый сквозной тест обязан включать simulator. Реальная модель устройства объявляется поддерживаемой только после hardware-in-the-loop проверки конкретного BLE GATT profile или Wi-Fi/LAN API.
 ## 15. Этапы реализации
 
 1. Зафиксировать локальные `internal/devicecontracts` в Backend и Bridge на основании `DEVICE_CONTRACTS_V1.md`, byte-identical schemas/fixtures и parity tests.
