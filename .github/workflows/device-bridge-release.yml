@@ -1,0 +1,172 @@
+name: "HomeCloudDeviceBridge | CI/CD Linux"
+
+# Every successful push to main produces a commit-specific pre-release.
+"on":
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not cancel builds: each release belongs to its exact commit SHA.
+jobs:
+  validate:
+    name: "1. Validate and test Device Bridge"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: "0"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Show toolchain
+        run: go version
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: Ensure module metadata is tidy without modifying it
+        run: go mod tidy -diff
+
+      - name: Unit and integration tests
+        run: go test -count=1 ./...
+
+      - name: Static analysis
+        run: go vet ./...
+
+  linux:
+    name: "2. Build Linux x64"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GOOS: linux
+      GOARCH: amd64
+      CGO_ENABLED: "0"
+      OUTPUT_NAME: HomeCloudDeviceBridge-linux-amd64
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile Device Bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build -trimpath -ldflags='-s -w' -o "dist/$OUTPUT_NAME" ./cmd/device-bridge
+          test -s "dist/$OUTPUT_NAME"
+          chmod +x "dist/$OUTPUT_NAME"
+
+      - name: Generate Linux SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum "$OUTPUT_NAME" > "$OUTPUT_NAME.sha256"
+          cat "$OUTPUT_NAME.sha256"
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: homecloud-device-bridge-linux-amd64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: "3. Verify and publish GitHub Release"
+    needs:
+      - linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: homecloud-device-bridge-linux-amd64
+          path: downloaded/linux
+
+      - name: Verify checksum and executable format
+        shell: bash
+        run: |
+          set -euo pipefail
+          LINUX=HomeCloudDeviceBridge-linux-amd64
+
+          test "$(find downloaded/linux -maxdepth 1 -type f | wc -l)" -eq 2
+          (
+            cd downloaded/linux
+            sha256sum -c "$LINUX.sha256"
+            test -s "$LINUX"
+            # ELF magic.
+            test "$(od -An -tx1 -N4 "$LINUX" | tr -d '[:space:]')" = 7f454c46
+          )
+
+          mkdir -p release-assets
+          cp "downloaded/linux/$LINUX" "release-assets/$LINUX"
+          chmod +x "release-assets/$LINUX"
+
+      - name: Create release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo 'Automated **HomeCloud Device Bridge** Linux stub build from `main`.'
+            echo
+            echo "Commit: `$GITHUB_SHA`"
+            echo '- Target: Linux amd64'
+            echo '- Go version: taken from `go.mod`; CGO disabled'
+            echo '- Validation: `go test`, `go vet`, module verification'
+            echo
+            echo '**Current scope:** bootstrap stub only. Backend WebSocket integration, device discovery, pairing and drivers are not implemented.'
+            echo
+            echo '**Health endpoint:** `http://127.0.0.1:8094/healthz` by default. Override the bind address with `HC_DEVICE_BRIDGE_HEALTH_ADDR`. Closing stdin requests graceful shutdown.'
+            echo
+            echo '### SHA-256'
+            echo '```text'
+            cat downloaded/linux/*.sha256
+            echo '```'
+          } > release_notes.md
+          cat release_notes.md
+
+      - name: Publish commit-specific pre-release
+        id: publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: device-bridge-build-${{ github.sha }}
+          name: "HomeCloudDeviceBridge | build ${{ github.sha }}"
+          target_commitish: ${{ github.sha }}
+          body_path: release_notes.md
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/HomeCloudDeviceBridge-linux-amd64
+
+      - name: Show published release
+        shell: bash
+        env:
+          RELEASE_URL: ${{ steps.publish.outputs.url }}
+        run: |
+          echo "Published: $RELEASE_URL"
+          echo '### HomeCloud Device Bridge release' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RELEASE_URL" >> "$GITHUB_STEP_SUMMARY"

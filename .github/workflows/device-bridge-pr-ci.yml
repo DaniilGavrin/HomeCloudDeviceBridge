@@ -1,0 +1,43 @@
+name: "HomeCloudDeviceBridge | Pull Request CI"
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: "Validate and test Device Bridge"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: "0"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Show toolchain
+        run: go version
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: Ensure module metadata is tidy without modifying it
+        run: go mod tidy -diff
+
+      - name: Unit and integration tests
+        run: go test -count=1 ./...
+
+      - name: Static analysis
+        run: go vet ./...

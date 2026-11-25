@@ -6,7 +6,7 @@ HomeCloud Device Bridge — отдельный Go-процесс, который
 
 Bridge запускается на том же узле, что и **HomeCloud Backend**. Пользовательский интерфейс взаимодействует только с Backend; прямого соединения UI ↔ Bridge нет.
 
-> **Статус:** ранняя стадия разработки. Документация описывает согласованную целевую архитектуру v1; наличие описанной функциональности в исполняемом коде не предполагается.
+> **Статус:** bootstrap-заглушка. Сейчас реализованы запуск процесса, локальный HTTP health endpoint и graceful shutdown. Backend WebSocket, реестр, discovery, pairing и драйверы ещё не реализованы.
 
 ## Архитектурные документы
 
@@ -76,7 +76,35 @@ Backend управляет процессом Bridge как supervised child pro
 
 ## Разработка
 
-Проект написан на Go. Инструкции по сборке, конфигурации, запуску и тестированию будут опубликованы вместе с реализацией соответствующих компонентов.
+Требуется Go **1.27.3** или совместимая версия.
+
+### Сборка и проверка
+
+```bash
+go test -count=1 ./...
+go vet ./...
+go build -trimpath -o ./bin/HomeCloudDeviceBridge ./cmd/device-bridge
+```
+
+### Запуск заглушки
+
+```bash
+./bin/HomeCloudDeviceBridge
+```
+
+По умолчанию health endpoint доступен только локально: `http://127.0.0.1:8094/healthz`.
+Адрес можно переопределить переменной окружения `HC_DEVICE_BRIDGE_HEALTH_ADDR`.
+Процесс корректно завершает работу по SIGINT/SIGTERM или при закрытии stdin (EOF).
+
+Ответ health endpoint обозначает только работоспособность процесса. Он **не** означает регистрацию в Backend или готовность управлять устройствами.
+
+### CI/CD
+
+- Pull Request в `main`: проверка модулей, тесты и `go vet`.
+- Push в `main`: те же проверки, сборка Linux amd64, SHA-256 и commit-specific GitHub Pre-release.
+- Release binary: `HomeCloudDeviceBridge-linux-amd64`.
+
+GitHub Actions workflows находятся в `.github/workflows/`.
 
 ---
 
