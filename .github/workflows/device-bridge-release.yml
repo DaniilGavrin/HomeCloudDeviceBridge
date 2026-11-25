@@ -118,7 +118,7 @@ jobs:
             sha256sum -c "$LINUX.sha256"
             test -s "$LINUX"
             # ELF magic.
-            test "$(od -An -tx1 -N4 "$LINUX" | tr -d ' \\n')" = 7f454c46
+            test "$(od -An -tx1 -N4 "$LINUX" | tr -d '[:space:]')" = 7f454c46
           )
 
           mkdir -p release-assets
